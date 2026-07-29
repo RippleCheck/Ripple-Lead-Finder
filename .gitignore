@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+
+# Per-user runtime files (never commit — config.json can hold an API key)
+leads.db
+config.json
+cities_cache.json
+.env
+*.env
+
+# macOS
+.DS_Store
+
+# Local editor / tooling metadata
+.claude/
+.vscode/
+.idea/
