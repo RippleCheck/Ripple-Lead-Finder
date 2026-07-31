@@ -496,8 +496,13 @@ def verify_link(url, timeout=6):
         return None
 
 
-def verify_lead_links(leads, max_leads=50):
-    """Check each lead's social links + website in parallel. Adds `links_ok`."""
+def verify_lead_links(leads, max_leads=40, budget=12.0):
+    """
+    Check social links + websites in parallel. Adds `links_ok`.
+    Hard time budget: link checking is a nice-to-have, so it must never be the
+    reason a search appears to hang. Anything not finished in `budget` seconds
+    is simply left unverified.
+    """
     jobs = []
     for l in leads[:max_leads]:
         for kind, url in (l.get("socials") or {}).items():
@@ -507,8 +512,15 @@ def verify_lead_links(leads, max_leads=50):
             jobs.append((l, "website", l["website"]))
     if not jobs:
         return leads
-    with ThreadPoolExecutor(max_workers=12) as pool:
-        results = list(pool.map(lambda j: verify_link(j[2]), jobs))
+    deadline = time.time() + budget
+
+    def run(j):
+        if time.time() > deadline:
+            return None          # out of budget -> "unverified", never "broken"
+        return verify_link(j[2], timeout=4)
+
+    with ThreadPoolExecutor(max_workers=24) as pool:
+        results = list(pool.map(run, jobs))
     for (l, kind, _), ok in zip(jobs, results):
         l.setdefault("links_ok", {})[kind] = ok
     for l in leads:
@@ -647,9 +659,18 @@ def find_leads(niche, place, limit=60, mode="no_website", check_sites=True):
         chosen = no_site
     else:
         if check_sites and with_site:
-            # network-bound work, so run it in parallel — 12 at a time is polite
-            with ThreadPoolExecutor(max_workers=12) as pool:
-                checks = list(pool.map(lambda l: check_website(l["website"]), with_site))
+            # Network-bound, so run it wide and under a hard time budget. A few
+            # slow-loading sites must not stall the whole search.
+            with_site = with_site[:limit * 2]
+            deadline = time.time() + 25.0
+
+            def _chk(l):
+                if time.time() > deadline:
+                    return (False, "Has a website (not health-checked — time budget reached)")
+                return check_website(l["website"], timeout=5)
+
+            with ThreadPoolExecutor(max_workers=24) as pool:
+                checks = list(pool.map(_chk, with_site))
             for l, (bad, reason) in zip(with_site, checks):
                 l["qualified"] = bad
                 l["reason"] = reason

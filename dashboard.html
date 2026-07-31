@@ -236,6 +236,7 @@
   <div class="filters">
     <select id="fNiche" onchange="loadLeads()"><option value="">All industries</option></select>
     <select id="fCountry" onchange="loadLeads()"><option value="">All countries</option></select>
+    <select id="fCity" onchange="loadLeads()"><option value="">All towns</option></select>
     <select id="fStage" onchange="loadLeads()">
       <option value="">All stages</option><option>New</option><option>Contacted</option>
       <option>Replied</option><option>Won</option><option>Lost</option>
@@ -256,7 +257,8 @@
       <input type="checkbox" id="fFresh" onchange="renderList()"> Fresh data only
     </label>
     <input type="text" id="fq" placeholder="Search saved leads..." oninput="debouncedLoad()">
-    <button class="btn ghost sm" onclick="location.href='/api/export.csv'">Export CSV</button>
+    <button class="btn ghost sm" onclick="clearFilters()">Show all leads</button>
+    <button class="btn ghost sm" onclick="exportCsv()">Export CSV</button>
   </div>
 
   <div class="layout">
@@ -444,13 +446,26 @@ async function doSearch() {
     const d = await res.json();
     if (!res.ok) { show("err", d.error || "Search failed."); return; }
 
+    // Scope the list to exactly what was just searched. Without this the list
+    // still shows every lead ever saved, which reads as "the search did nothing"
+    // or worse, "I searched estate agents and got gyms".
+    document.getElementById("fNiche").value = d.filter_niche || "";
+    document.getElementById("fCountry").value = d.filter_country || "";
+    document.getElementById("fCity").value = d.filter_city || "";
+    document.getElementById("fStage").value = "";
+    document.getElementById("fq").value = "";
+    document.getElementById("fContact").value = "";
+    document.getElementById("fStarOnly").checked = false;
+    document.getElementById("fFresh").checked = false;
+
     show("ok",
       `Scanned <b>${d.scanned}</b> live businesses in <b>${d.place}</b> — <b>${d.found}</b> qualified (closed shops filtered out). ` +
       `Added <b>${d.new_leads}</b> new leads` +
       (d.duplicates ? `, skipped ${d.duplicates} already saved.` : ".") +
+      (d.found ? ` Showing <b>${d.filter_niche} in ${d.filter_city}</b> — hit "Show all leads" to see your whole list.` : "") +
       (d.found === 0 ? " Try a bigger city, a more common industry, or switch mode to 'Both'." : "")
     );
-    loadLeads();
+    await loadLeads(d.filter_niche, d.filter_country, d.filter_city);
   } catch (e) {
     // distinguish "busy" from "dead" using the health endpoint
     try {
@@ -468,30 +483,62 @@ async function doSearch() {
 let t = null;
 function debouncedLoad() { clearTimeout(t); t = setTimeout(loadLeads, 300); }
 
-async function loadLeads() {
+function filterParams() {
   const p = new URLSearchParams();
   const n = document.getElementById("fNiche").value;
   const c = document.getElementById("fCountry").value;
+  const ct = document.getElementById("fCity").value;
   const s = document.getElementById("fStage").value;
   const q = document.getElementById("fq").value.trim();
-  if (n) p.set("niche", n); if (c) p.set("country", c);
-  if (s) p.set("stage", s); if (q) p.set("q", q);
+  if (n) p.set("niche", n);
+  if (c) p.set("country", c);
+  if (ct) p.set("city", ct);
+  if (s) p.set("stage", s);
+  if (q) p.set("q", q);
+  return p;
+}
 
+/* optional args let a just-finished search pass its own scope in, avoiding a
+   race where the <select> options haven't been repopulated yet */
+async function loadLeads(forceNiche, forceCountry, forceCity) {
+  const p = filterParams();
+  if (forceNiche !== undefined) {
+    p.set("niche", forceNiche || "");
+    if (forceCountry) p.set("country", forceCountry); else p.delete("country");
+    if (forceCity) p.set("city", forceCity); else p.delete("city");
+    if (!forceNiche) p.delete("niche");
+  }
   try {
     const d = await (await fetch("/api/leads?" + p)).json();
     LEADS = d.leads;
     STAGES_ALL = d.stages;
     STARRED_TOTAL = d.starred_total || 0;
+    TOTAL_ALL = d.total_all || 0;
+    syncFacets(d.facets);          // repopulate BEFORE restoring values
     renderStats(d.stages);
     renderProg();
-    syncFacets(d.facets);
     renderList();
   } catch (e) {
     show("err", "Lost connection to the local server.");
   }
 }
 
-let STARRED_TOTAL = 0;
+function clearFilters() {
+  ["fNiche","fCountry","fCity","fStage","fContact"].forEach(function(id){
+    document.getElementById(id).value = ""; });
+  document.getElementById("fq").value = "";
+  document.getElementById("fStarOnly").checked = false;
+  document.getElementById("fFresh").checked = false;
+  show("info", "Showing all saved leads.");
+  loadLeads();
+}
+
+function exportCsv() {
+  /* export must match exactly what's on screen, not the whole database */
+  location.href = "/api/export.csv?" + filterParams().toString();
+}
+
+let STARRED_TOTAL = 0, TOTAL_ALL = 0;
 
 // client-side quick filters (contact channel / shortlist / freshness)
 function passesFilters(l) {
@@ -520,11 +567,20 @@ async function toggleStar(id, ev) {
 }
 
 function syncFacets(f) {
-  const nSel = document.getElementById("fNiche"), cSel = document.getElementById("fCountry");
-  const nv = nSel.value, cv = cSel.value;
-  nSel.innerHTML = '<option value="">All industries</option>' + f.niches.map(x => `<option>${x}</option>`).join("");
-  cSel.innerHTML = '<option value="">All countries</option>' + f.countries.map(x => `<option>${x}</option>`).join("");
-  nSel.value = nv; cSel.value = cv;
+  const sets = [
+    ["fNiche", "All industries", f.niches || []],
+    ["fCountry", "All countries", f.countries || []],
+    ["fCity", "All towns", f.cities || []]
+  ];
+  sets.forEach(function(s){
+    const el = document.getElementById(s[0]), keep = el.value;
+    el.innerHTML = '<option value="">' + s[1] + '</option>' +
+      s[2].map(function(x){ return '<option>' + esc(x) + '</option>'; }).join("");
+    /* restore the selection; if that value no longer exists, add it back so
+       the filter never silently resets itself to "all" */
+    if (keep && s[2].indexOf(keep) === -1) el.insertAdjacentHTML("beforeend", '<option>' + esc(keep) + '</option>');
+    el.value = keep;
+  });
 }
 
 function renderStats(stages) {
@@ -532,8 +588,9 @@ function renderStats(stages) {
   const total = Object.values(stages).reduce((a,b)=>a+b,0);
   const callable = LEADS.filter(l => l.phone).length;
   const emailable = LEADS.filter(l => l.email).length;
+  const scoped = total !== TOTAL_ALL;
   document.getElementById("stats").innerHTML =
-    `<div class="stat"><b>${total}</b><span>Saved leads</span></div>` +
+    `<div class="stat"><b>${total}</b><span>${scoped ? "In this view" : "Saved leads"}</span></div>` +
     `<div class="stat"><b>${callable}</b><span>Can call now</span></div>` +
     `<div class="stat"><b>${emailable}</b><span>Can email now</span></div>` +
     order.map(s => `<div class="stat"><b>${stages[s]||0}</b><span>${s}</span></div>`).join("");

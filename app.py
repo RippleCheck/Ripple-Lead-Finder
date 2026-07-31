@@ -56,16 +56,8 @@ def load_config():
 
 
 def save_config(cfg):
-    # config.json stores an API key in plaintext, so keep it readable only by the
-    # current user (0o600) instead of the default world-readable 0o644. Create it
-    # with tight perms up front, and tighten again in case the file pre-existed.
-    fd = os.open(CONFIG_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
+    with open(CONFIG_PATH, "w") as f:
         json.dump(cfg, f, indent=2)
-    try:
-        os.chmod(CONFIG_PATH, 0o600)
-    except OSError:
-        pass  # filesystems without POSIX permissions (e.g. some Windows setups)
 
 
 # ─────────────────────────── database ─────────────────────────────────────────
@@ -307,42 +299,58 @@ def api_search():
     added = save_leads(result["leads"])
     result["new_leads"] = added
     result["duplicates"] = len(result["leads"]) - added
+    # exact city/country labels as stored, so the UI can scope the list to
+    # precisely what was just searched instead of showing the whole database
+    result["filter_city"] = result["leads"][0]["city"] if result["leads"] else ""
+    result["filter_country"] = result["leads"][0].get("country", "") if result["leads"] else ""
+    result["filter_niche"] = niche
     return jsonify(result)
+
+
+def _lead_filters(args):
+    """Shared WHERE builder so the list and the CSV export always agree."""
+    params, where = [], []
+    for field in ("niche", "country", "city", "stage"):
+        v = args.get(field)
+        if v:
+            where.append(f"{field}=?")
+            params.append(v)
+    if args.get("starred"):
+        where.append("starred=1")
+    search = args.get("q")
+    if search:
+        where.append("(name LIKE ? OR city LIKE ?)")
+        params += [f"%{search}%", f"%{search}%"]
+    return (" WHERE " + " AND ".join(where)) if where else "", params
 
 
 @app.route("/api/leads")
 def api_leads():
-    q = "SELECT * FROM leads"
-    params, where = [], []
-    for field in ("niche", "country", "stage"):
-        v = request.args.get(field)
-        if v:
-            where.append(f"{field}=?")
-            params.append(v)
-    if request.args.get("starred"):
-        where.append("starred=1")
-    search = request.args.get("q")
-    if search:
-        where.append("(name LIKE ? OR city LIKE ?)")
-        params += [f"%{search}%", f"%{search}%"]
-    if where:
-        q += " WHERE " + " AND ".join(where)
-    q += " ORDER BY starred DESC, score DESC, name ASC"
+    clause, params = _lead_filters(request.args)
+    q = "SELECT * FROM leads" + clause + " ORDER BY starred DESC, score DESC, name ASC"
 
     with db() as conn:
         rows = conn.execute(q, params).fetchall()
-        stats = conn.execute("""
-            SELECT stage, COUNT(*) c FROM leads GROUP BY stage
-        """).fetchall()
-        starred_total = conn.execute("SELECT COUNT(*) FROM leads WHERE starred=1").fetchone()[0]
+        # stage counts must reflect the SAME filter the user is looking at,
+        # otherwise the stat strip contradicts the list underneath it
+        stats = conn.execute(
+            "SELECT stage, COUNT(*) c FROM leads" + clause + " GROUP BY stage", params
+        ).fetchall()
+        star_clause = clause + (" AND starred=1" if clause else " WHERE starred=1")
+        starred_total = conn.execute(
+            "SELECT COUNT(*) FROM leads" + star_clause, params
+        ).fetchone()[0]
+        total_all = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
         facets = {
             "niches": [r[0] for r in conn.execute("SELECT DISTINCT niche FROM leads ORDER BY 1")],
             "countries": [r[0] for r in conn.execute("SELECT DISTINCT country FROM leads WHERE country<>'' ORDER BY 1")],
+            "cities": [r[0] for r in conn.execute("SELECT DISTINCT city FROM leads WHERE city<>'' ORDER BY 1")],
         }
     return jsonify({
         "leads": [row_to_lead(r) for r in rows],
         "stages": {r["stage"]: r["c"] for r in stats},
         "starred_total": starred_total,
+        "total_all": total_all,
         "facets": facets,
     })
 
@@ -388,8 +396,13 @@ def api_message():
 
 @app.route("/api/export.csv")
 def api_export():
+    # honour the exact same filters the user has applied on screen, so an
+    # export of "Estate Agent in Los Angeles" is not the whole database
+    clause, params = _lead_filters(request.args)
     with db() as conn:
-        rows = conn.execute("SELECT * FROM leads ORDER BY score DESC").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM leads" + clause + " ORDER BY starred DESC, score DESC", params
+        ).fetchall()
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["Name", "Starred", "Owner/Operator", "Niche", "City", "Country", "Address",
