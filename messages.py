@@ -36,9 +36,43 @@ PRICE_BY_COUNTRY = {
 }
 DEFAULT_PRICE = "$250"
 
+# Anything not in PRICE_BY_COUNTRY falls back to the local currency symbol
+# with a sensible local amount, so you never quote dollars to a Polish salon.
+CURRENCY_BY_COUNTRY = {
+    "India": ("₹", "14,999"),          "Pakistan": ("₨", "39,000"),
+    "Bangladesh": ("৳", "16,000"),     "Sri Lanka": ("Rs", "42,000"),
+    "Nepal": ("रू", "18,000"),         "Poland": ("zł", "990"),
+    "Czechia": ("Kč", "5,900"),        "Hungary": ("Ft", "89,000"),
+    "Romania": ("lei", "1,150"),       "Bulgaria": ("лв", "450"),
+    "Turkey": ("₺", "8,500"),          "Ukraine": ("₴", "9,900"),
+    "Brazil": ("R$", "1,290"),         "Mexico": ("MX$", "4,500"),
+    "Argentina": ("AR$", "250,000"),   "Chile": ("CLP$", "230,000"),
+    "Colombia": ("COP$", "1,000,000"), "South Africa": ("R", "4,500"),
+    "Nigeria": ("₦", "380,000"),       "Kenya": ("KSh", "32,000"),
+    "Egypt": ("E£", "12,000"),         "Morocco": ("MAD", "2,500"),
+    "Japan": ("¥", "38,000"),          "South Korea": ("₩", "340,000"),
+    "Singapore": ("S$", "340"),        "Malaysia": ("RM", "1,150"),
+    "Thailand": ("฿", "8,900"),        "Vietnam": ("₫", "6,300,000"),
+    "Philippines": ("₱", "14,000"),    "Indonesia": ("Rp", "3,900,000"),
+    "Saudi Arabia": ("SAR", "940"),    "United Arab Emirates": ("AED", "920"),
+    "Qatar": ("QAR", "910"),           "Switzerland": ("CHF", "230"),
+    "Sweden": ("kr", "2,700"),         "Norway": ("kr", "2,800"),
+    "Denmark": ("kr", "1,750"),        "Israel": ("₪", "930"),
+}
+
 
 def price_for(lead):
-    return PRICE_BY_COUNTRY.get(lead.get("country", ""), DEFAULT_PRICE)
+    """
+    Price in the lead's own currency. Falls back through:
+    explicit zone -> local currency table -> USD.
+    """
+    c = lead.get("country", "")
+    if c in PRICE_BY_COUNTRY:
+        return PRICE_BY_COUNTRY[c]
+    if c in CURRENCY_BY_COUNTRY:
+        sym, amt = CURRENCY_BY_COUNTRY[c]
+        return f"{sym}{amt}"
+    return DEFAULT_PRICE
 
 
 AI = {"provider": "openai"}  # switched from the Settings panel
@@ -65,6 +99,10 @@ def apply_settings(cfg):
         os.environ["ANTHROPIC_API_KEY"] = cfg["anthropic_api_key"]
     if cfg.get("anthropic_model"):
         os.environ["ANTHROPIC_MODEL"] = cfg["anthropic_model"]
+    if cfg.get("grok_api_key"):
+        os.environ["GROK_API_KEY"] = cfg["grok_api_key"]
+    if cfg.get("grok_model"):
+        os.environ["GROK_MODEL"] = cfg["grok_model"]
     if cfg.get("prices"):
         PRICE_BY_COUNTRY.update(cfg["prices"])
 
@@ -203,7 +241,56 @@ BUILDERS = {
 }
 
 
-def build(lead, kind="fb"):
+# ── multi-language templates (no AI key needed) ───────────────────────────
+LANG_NAMES = {"en": "English", "hi": "Hindi", "hinglish": "Hinglish (Roman script)",
+              "es": "Spanish"}
+
+
+def _t_hi(lead):
+    return (f"Namaste! Main {lead['city']} ke {lead['niche'].lower()} businesses dekh raha tha, "
+            f"tabhi {lead['name']} par nazar padi.\n\n"
+            "Dekha ki aapki koi website nahi hai — matlab jo log Google par search karte hain, "
+            "unhe aap milte hi nahi. Sirf wahi log pahunch paate hain jo pehle se jaante hain.\n\n"
+            f"Maine aapke liye ek simple website bana di hai, aapke apne photos se. "
+            f"Bilkul free hai, dekh lijiye — {price_for(lead)} mein poori ban jayegi agar pasand aaye.\n\n"
+            "Bhej doon?\n\n"
+            f"— {ME['name']}")
+
+
+def _t_hing(lead):
+    return (f"Hi! {lead['city']} mein {lead['niche'].lower()} search kar raha tha aur "
+            f"{lead['name']} dikha — kaafi solid lag raha hai.\n\n"
+            "Ek baat noticed ki — website nahi hai aapki. Toh jo log Google pe search karte "
+            "hain unhe aap milte nahi, sirf existing customers hi aate hain.\n\n"
+            f"Maine already ek rough site bana di hai aapke photos use karke. Free hai, "
+            f"koi charge nahi. Full version {price_for(lead)} flat, {ME['turnaround']} mein ready.\n\n"
+            "Bhejun dekhne ke liye?\n\n"
+            f"— {ME['name']}")
+
+
+def _t_es(lead):
+    pain, win = hook(lead["niche"])
+    return (f"Hola! Vi {lead['name']} mientras miraba negocios de {lead['niche'].lower()} "
+            f"en {lead['city']} — se ve muy bien.\n\n"
+            "Noté que no tienen sitio web, así que quien los busca en Google encuentra a "
+            "la competencia en vez de a ustedes.\n\n"
+            f"Les armé uno sencillo con sus propias fotos. Es gratis verlo, sin compromiso. "
+            f"El completo sale {price_for(lead)}, listo en unos {ME['turnaround']}.\n\n"
+            "¿Se lo mando?\n\n"
+            f"— {ME['name']}")
+
+
+LANG_DM = {"hi": _t_hi, "hinglish": _t_hing, "es": _t_es}
+
+
+def build(lead, kind="fb", lang="en"):
+    """
+    Template message. `lang` only affects the social DM, which is the message
+    most often sent in a local language; email and call scripts stay English
+    because that's how they're actually used in these markets.
+    """
+    if kind == "fb" and lang in LANG_DM:
+        return LANG_DM[lang](lead)
     return BUILDERS.get(kind, facebook_dm)(lead)
 
 
@@ -254,6 +341,23 @@ def _call_openai(prompt, key):
     }).encode()
     req = urllib.request.Request(
         "https://api.openai.com/v1/chat/completions", data=body,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=45, context=ssl.create_default_context()) as r:
+        data = json.loads(r.read().decode())
+    return data["choices"][0]["message"]["content"].strip()
+
+
+def _call_grok(prompt, key):
+    """xAI Grok — OpenAI-compatible chat completions endpoint."""
+    body = json.dumps({
+        "model": os.environ.get("GROK_MODEL", "grok-2-latest"),
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 800,
+        "temperature": 0.9,
+    }).encode()
+    req = urllib.request.Request(
+        "https://api.x.ai/v1/chat/completions", data=body,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
     )
     with urllib.request.urlopen(req, timeout=45, context=ssl.create_default_context()) as r:
@@ -350,29 +454,77 @@ def build_brief(lead, site_text="", use_ai=False):
         "Plain text only, no markdown symbols."
     )
     try:
-        caller = _call_anthropic if provider == "anthropic" else _call_openai
-        return caller(prompt, key), f"ai:{provider}"
+        _c, k2 = _provider_caller()
+        return _c(prompt, key or k2), f"ai:{provider}"
     except Exception as e:
         return _brief_template(lead, site_text), f"fallback: {e}"
 
 
-def ai_rewrite(lead, kind="fb", api_key=None, model=None):
-    """
-    Rewrite a message so no two outreach messages are identical, using whichever
-    provider is picked in Settings (OpenAI or Anthropic). Falls back to the
-    template if anything goes wrong, so the message box is never empty.
-    """
-    provider = AI.get("provider", "openai")
-    if provider == "anthropic":
-        key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-        caller = _call_anthropic
-    else:
-        key = api_key or os.environ.get("OPENAI_API_KEY", "")
-        caller = _call_openai
-    if not key:
-        return build(lead, kind), "no_key"
+# ── provider routing ──────────────────────────────────────────────────────
+# Function names, not references: resolved at call time so a provider can be
+# swapped or stubbed without rebuilding this table.
+PROVIDERS = {
+    "openai":    ("_call_openai",    "OPENAI_API_KEY"),
+    "anthropic": ("_call_anthropic", "ANTHROPIC_API_KEY"),
+    "grok":      ("_call_grok",      "GROK_API_KEY"),
+}
 
+
+def _provider_caller():
+    """(callable, key) for whichever provider Settings has selected."""
+    p = AI.get("provider", "none")
+    fname, env = PROVIDERS.get(p, (None, None))
+    if not fname:
+        return None, ""
+    return globals().get(fname), os.environ.get(env, "")
+
+
+# ── the anti-"AI slop" rewrite instruction ────────────────────────────────
+# Models default to a corporate register that reads as machine-written and
+# trips spam filters. This forces the opposite: short, plain, human.
+HUMAN_RULES = """
+Write as a real local freelancer typing on their phone, not as a marketing department.
+
+HARD BANS - never use any of these words or phrases:
+delve, testament, seamless, revolutionize, elevate, unlock, leverage, robust,
+cutting-edge, game-changer, in today's digital landscape, take it to the next level,
+I hope this email finds you well, I'm reaching out, we specialize in, solutions,
+empower, streamline, harness, unparalleled, bespoke, synergy, holistic, curated,
+embark, navigate the, tapestry, moreover, furthermore, in conclusion.
+
+STYLE RULES:
+- Short sentences. Some very short.
+- Contractions always (I'm, you're, don't, it's).
+- Start with a specific real detail about THIS business, not a greeting.
+- One idea per line. Line breaks over paragraphs.
+- No bullet points. No headings. No bold. No emoji.
+- No exclamation marks except at most one, and only if it's genuinely warm.
+- It is fine to start a sentence with And, But or So.
+- Slight imperfection is good: an aside, a shrug, an unfinished thought.
+- Never sound impressed with yourself. Never oversell.
+- End by making it easy to say no.
+"""
+
+
+def ai_rewrite(lead, kind="fb", api_key=None, model=None, lang="en"):
+    """
+    Rewrite a message so no two are identical, using whichever provider is
+    selected in Settings (OpenAI / Anthropic / Grok). Falls back to the
+    template on any failure, so the message box is never empty.
+    """
+    provider = AI.get("provider", "none")
+    caller, envkey = _provider_caller()
+    key = api_key or envkey
+    if not caller or not key:
+        return build(lead, kind, lang), "no_key"
+
+    prompt = _build_prompt(lead, kind) + "\n\n" + HUMAN_RULES
+    if lang and lang != "en":
+        prompt += f"\n\nWrite the whole message in: {LANG_NAMES.get(lang, lang)}. " \
+                  "Keep the same plain, human tone in that language."
     try:
-        return caller(_build_prompt(lead, kind), key), f"ai:{provider}"
+        return caller(prompt, key), f"ai:{provider}"
     except Exception as e:
-        return build(lead, kind), f"fallback: {e}"
+        # rate limit, no balance, no internet, bad key - all land here and the
+        # user still gets a usable message rather than an error
+        return build(lead, kind, lang), f"fallback: {e}"

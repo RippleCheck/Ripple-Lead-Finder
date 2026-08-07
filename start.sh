@@ -10,5 +10,5 @@ if ! $PY -c "import flask" &>/dev/null; then
   $PY -m pip install --user flask --quiet --disable-pip-version-check || $PY -m pip install flask --quiet
 fi
 
-echo "Dashboard: http://127.0.0.1:5000"
+echo "Starting — the dashboard address is printed below."
 $PY app.py

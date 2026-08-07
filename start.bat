@@ -22,9 +22,10 @@ if errorlevel 1 (
 )
 
 echo.
-echo Dashboard: http://127.0.0.1:5000
-echo Leave this window open while you use it.
+echo Launching... your browser will open on its own.
+echo The exact address is printed below.
 echo.
-start "" http://127.0.0.1:5000
+REM app.py picks a free port and opens the browser itself, so nothing is
+REM hardcoded here - that used to open the wrong address when 5000 was busy.
 %PY% app.py
 pause

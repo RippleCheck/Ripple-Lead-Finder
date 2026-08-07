@@ -34,120 +34,21 @@ OVERPASS_MIRRORS = [
 
 NOMINATIM = "https://nominatim.openstreetmap.org/search"
 
-BLOCKED_COUNTRIES = {"in", "ind", "india"}
+# India was excluded in v1. It is now supported — see INDIA_NOTE, which the API
+# surfaces so the user knows OSM coverage there is thinner than in the West.
+BLOCKED_COUNTRIES = set()
+
+INDIA_NOTE = ("OpenStreetMap coverage in India is thinner than in the US/UK — expect fewer "
+              "results per search and more businesses without tagged phone numbers. Metro "
+              "areas (Mumbai, Delhi, Bengaluru, Pune, Hyderabad) are mapped far better than "
+              "smaller towns. Try 'Both' mode to widen the net.")
 
 # Friendly niche name -> the OSM tags that identify it.
 # Each entry is a list of (key, value) pairs; we OR them together.
-NICHES = {
-    "Bakery":            [("shop", "bakery"), ("shop", "pastry")],
-    "Cafe":              [("amenity", "cafe")],
-    "Restaurant":        [("amenity", "restaurant")],
-    "Fast Food":         [("amenity", "fast_food")],
-    "Bar / Pub":         [("amenity", "bar"), ("amenity", "pub")],
-    "Barber Shop":       [("shop", "hairdresser")],
-    "Beauty / Nail Salon": [("shop", "beauty"), ("shop", "nails")],
-    "Tattoo Studio":     [("shop", "tattoo")],
-    "Dentist":           [("amenity", "dentist"), ("healthcare", "dentist")],
-    "Doctor / Clinic":   [("amenity", "doctors"), ("healthcare", "doctor")],
-    "Veterinary":        [("amenity", "veterinary")],
-    "Pharmacy":          [("amenity", "pharmacy")],
-    "Physiotherapy":     [("healthcare", "physiotherapist")],
-    "Gym / Fitness":     [("leisure", "fitness_centre")],
-    "Car Repair":        [("shop", "car_repair")],
-    "Car Dealer":        [("shop", "car")],
-    "Tyre Shop":         [("shop", "tyres")],
-    "Grocery / Convenience": [("shop", "convenience"), ("shop", "grocery")],
-    "Supermarket":       [("shop", "supermarket")],
-    "Butcher":           [("shop", "butcher")],
-    "Greengrocer":       [("shop", "greengrocer")],
-    "Florist":           [("shop", "florist")],
-    "Jeweller":          [("shop", "jewelry")],
-    "Optician":          [("shop", "optician")],
-    "Bicycle Shop":      [("shop", "bicycle")],
-    "Furniture Store":   [("shop", "furniture")],
-    "Hardware Store":    [("shop", "hardware"), ("shop", "doityourself")],
-    "Pet Shop":          [("shop", "pet")],
-    "Pet Grooming":      [("shop", "pet_grooming")],
-    "Laundry / Dry Clean": [("shop", "laundry"), ("shop", "dry_cleaning")],
-    "Bookshop":          [("shop", "books")],
-    "Clothing Store":    [("shop", "clothes")],
-    "Shoe Shop":         [("shop", "shoes")],
-    "Plumber":           [("craft", "plumber")],
-    "Electrician":       [("craft", "electrician")],
-    "Carpenter":         [("craft", "carpenter")],
-    "Painter / Decorator": [("craft", "painter")],
-    "Gardener / Landscaper": [("craft", "gardener")],
-    "Photographer":      [("craft", "photographer")],
-    "Builder":           [("craft", "builder")],
-    "Roofer":            [("craft", "roofer")],
-    "Hotel":             [("tourism", "hotel")],
-    "Guest House / B&B": [("tourism", "guest_house"), ("tourism", "bed_and_breakfast")],
-    "Travel Agency":     [("shop", "travel_agency")],
-    "Estate Agent":      [("office", "estate_agent")],
-    "Accountant":        [("office", "accountant")],
-    "Lawyer":            [("office", "lawyer")],
-    "Insurance Office":  [("office", "insurance")],
-    "Driving School":    [("amenity", "driving_school")],
-    "Childcare / Nursery": [("amenity", "childcare"), ("amenity", "kindergarten")],
-    "Funeral Director":  [("shop", "funeral_directors")],
-    "Ice Cream Shop":    [("amenity", "ice_cream"), ("shop", "ice_cream")],
-    "Deli / Fine Food":  [("shop", "deli")],
-    "Confectionery / Sweets": [("shop", "confectionery"), ("shop", "chocolate")],
-    "Wine / Liquor Shop": [("shop", "wine"), ("shop", "alcohol")],
-    "Tea / Coffee Shop": [("shop", "tea"), ("shop", "coffee")],
-    "Massage / Spa":     [("shop", "massage"), ("leisure", "spa")],
-    "Chiropractor":      [("healthcare", "chiropractor")],
-    "Locksmith":         [("craft", "locksmith"), ("shop", "locksmith")],
-    "Shoe Repair / Cobbler": [("craft", "shoemaker"), ("shop", "shoe_repair")],
-    "Tailor / Alterations": [("craft", "tailor"), ("shop", "tailor")],
-    "Dressmaker":        [("craft", "dressmaker")],
-    "Watch / Clock Repair": [("craft", "watchmaker"), ("shop", "watches")],
-    "Computer / Phone Repair": [("shop", "computer_repair"), ("shop", "mobile_phone_repair"), ("shop", "computer")],
-    "Car Wash":          [("amenity", "car_wash")],
-    "Taxi Company":      [("office", "taxi"), ("amenity", "taxi")],
-    "Moving Company":    [("office", "moving_company")],
-    "Cleaning Service":  [("craft", "cleaning"), ("shop", "cleaning")],
-    "HVAC / Heating":    [("craft", "hvac"), ("craft", "heating_engineer")],
-    "Glazier / Windows": [("craft", "glaziery"), ("craft", "window_construction")],
-    "Metalworker / Welder": [("craft", "metal_construction"), ("craft", "blacksmith")],
-    "Upholsterer":       [("craft", "upholsterer")],
-    "Stonemason":        [("craft", "stonemason")],
-    "Music School":      [("amenity", "music_school")],
-    "Tutoring / Education": [("office", "tutoring"), ("amenity", "prep_school")],
-    "Language School":   [("amenity", "language_school")],
-    "Dance School":      [("leisure", "dance"), ("amenity", "dancing_school")],
-    "Gift Shop":         [("shop", "gift")],
-    "Toy Shop":          [("shop", "toys")],
-    "Stationery Shop":   [("shop", "stationery")],
-    "Sports Shop":       [("shop", "sports")],
-    "Garden Centre":     [("shop", "garden_centre")],
-    "Art Gallery / Studio": [("shop", "art"), ("tourism", "gallery")],
-    "Picture Framer":    [("craft", "frame_maker"), ("shop", "frame")],
-    "Antique Shop":      [("shop", "antiques")],
-    "Second-hand / Charity Shop": [("shop", "second_hand"), ("shop", "charity")],
-    "Fishmonger":        [("shop", "seafood")],
-    "Health Food Shop":  [("shop", "health_food")],
-    "Farm Shop":         [("shop", "farm")],
-    "Catering":          [("craft", "caterer")],
-    "Nightclub / Venue": [("amenity", "nightclub"), ("amenity", "events_venue")],
-    "Camping / Caravan Site": [("tourism", "camp_site"), ("tourism", "caravan_site")],
-    "Hostel":            [("tourism", "hostel")],
-    "Architect":         [("office", "architect")],
-    "Surveyor":          [("office", "surveyor")],
-    "IT / Software Office": [("office", "it")],
-    "Marketing / Advertising Office": [("office", "advertising_agency")],
-    "Employment Agency": [("office", "employment_agency")],
-    "Chimney Sweep":     [("craft", "chimney_sweeper")],
-    "Scaffolder":        [("craft", "scaffolder")],
-    "Tiler":             [("craft", "tiler")],
-    "Plasterer":         [("craft", "plasterer")],
-    "Flooring / Parquet": [("craft", "floorer"), ("craft", "parquet_layer")],
-    "Joiner / Cabinet Maker": [("craft", "joiner"), ("craft", "cabinet_maker")],
-    "Sailmaker / Boatbuilder": [("craft", "boatbuilder"), ("craft", "sailmaker")],
-    "Laundry Self-Service": [("shop", "laundry_self_service")],
-    "Vacation Rental":   [("tourism", "chalet"), ("tourism", "apartment")],
-    "Butchery / Charcuterie": [("shop", "charcuterie")],
-}
+# Business taxonomy lives in categories.py — 258 trades, each mapped to OSM tags
+# and to a matching Ripple Foundry demo template.
+from categories import (NICHES, SEGMENTS, FOUNDRY, foundry_demo, foundry_app,  # noqa: E402
+                        foundry_links, set_agency, encode_payload, decode_payload, segments)
 
 # Tags that mean a business is permanently closed / gone. Any element carrying
 # one of these (or a lifecycle prefix like disused:shop=bakery) is skipped, so
@@ -188,8 +89,105 @@ COUNTRY_ISO = {
     "Paraguay": "PY", "Bolivia": "BO", "Costa Rica": "CR", "Panama": "PA",
     "Guatemala": "GT", "Dominican Republic": "DO", "Jamaica": "JM",
     "Trinidad and Tobago": "TT", "Bahamas": "BS", "Barbados": "BB",
-    "Fiji": "FJ", "Papua New Guinea": "PG",
+    "Fiji": "FJ", "Papua New Guinea": "PG", "India": "IN",
 }
+
+# ── mobile-number detection ───────────────────────────────────────────────
+# A wa.me link only works for a mobile. Landlines produce a dead link and waste
+# your time, so we work out which is which from the national numbering plan.
+# This is prefix logic on a normalised number — no third-party lookup, no cost.
+MOBILE_RULES = {
+    "44": lambda n: n.startswith("7"),                        # UK   +44 7xxx
+    "1":  lambda n: len(n) == 10,                             # US/CA no landline/mobile split
+    "91": lambda n: n[:1] in "6789" and len(n) == 10,         # India +91 6-9
+    "61": lambda n: n.startswith("4"),                        # Australia
+    "64": lambda n: n.startswith("2"),                        # New Zealand
+    "353": lambda n: n.startswith("8"),                       # Ireland
+    "49": lambda n: n.startswith("1"),                        # Germany
+    "33": lambda n: n[:1] in "67",                            # France
+    "34": lambda n: n[:1] in "67",                            # Spain
+    "39": lambda n: n.startswith("3"),                        # Italy
+    "31": lambda n: n.startswith("6"),                        # Netherlands
+    "971": lambda n: n.startswith("5"),                       # UAE
+    "27": lambda n: n[:2] in ("60", "61", "62", "63", "64", "65", "66", "67",
+                              "68", "71", "72", "73", "74", "76", "78", "79",
+                              "81", "82", "83", "84"),        # South Africa
+}
+CC_BY_ISO = {
+    "gb": "44", "us": "1", "ca": "1", "in": "91", "au": "61", "nz": "64",
+    "ie": "353", "de": "49", "fr": "33", "es": "34", "it": "39", "nl": "31",
+    "ae": "971", "za": "27", "sg": "65", "my": "60", "pk": "92", "bd": "880",
+    "lk": "94", "np": "977", "ph": "63", "id": "62", "th": "66", "vn": "84",
+}
+
+
+def maps_links(name, lat, lon, address="", city=""):
+    """
+    Google Maps verification links built from the coordinates OSM already gives
+    us. No API key, no scraping, no rate limit — these are just deep links the
+    user clicks, so Google sees an ordinary browser visit.
+
+    Three links, because they answer three different questions:
+      verify  — is this business really here, and what does Google know about it?
+      pin     — exact OSM coordinate, to spot a mis-tagged location
+      street  — Street View at the coordinate: does a shopfront actually exist?
+    """
+    out = {}
+    if lat is None or lon is None:
+        # no coordinates: fall back to a plain name search so the button still works
+        if name:
+            q = urllib.parse.quote_plus(" ".join(x for x in [name, address or city] if x))
+            out["maps_verify"] = f"https://www.google.com/maps/search/?api=1&query={q}"
+        return out
+
+    ll = f"{float(lat):.6f},{float(lon):.6f}"
+    # name searched *at* the coordinate — lands on the business pin when Google
+    # has it, and on an empty map when it doesn't (which is itself a signal)
+    label = " ".join(x for x in [name, address or city] if x).strip()
+    out["maps_verify"] = (
+        f"https://www.google.com/maps/search/{urllib.parse.quote(label)}/@{ll},18z"
+        if label else f"https://www.google.com/maps/search/?api=1&query={ll}"
+    )
+    out["maps_pin"] = f"https://www.google.com/maps/search/?api=1&query={ll}"
+    out["maps_street"] = (
+        f"https://www.google.com/maps/@?api=1&map_action=pano&viewpoint={ll}"
+    )
+    return out
+
+
+def phone_channels(phone, country_code=""):
+    """
+    Work out how a phone number can actually be used.
+    Returns {e164, whatsapp, tel, is_mobile} — whatsapp is a wa.me link with a
+    prefilled slot, or "" when the number is a landline or can't be parsed.
+    """
+    if not phone:
+        return {}
+    raw = re.sub(r"[^\d+]", "", phone)
+    if not raw:
+        return {}
+
+    if raw.startswith("+"):
+        digits = raw[1:]
+    elif raw.startswith("00"):
+        digits = raw[2:]
+    else:
+        # national format — prepend the country's dialling code
+        cc = CC_BY_ISO.get((country_code or "").lower(), "")
+        digits = cc + raw.lstrip("0") if cc else raw.lstrip("0")
+
+    cc = next((c for c in sorted(MOBILE_RULES, key=len, reverse=True)
+               if digits.startswith(c)), "")
+    national = digits[len(cc):] if cc else digits
+    is_mobile = MOBILE_RULES[cc](national) if cc and national else None
+
+    return {
+        "e164": "+" + digits,
+        "tel": "tel:+" + digits,
+        "is_mobile": is_mobile,
+        # unknown is treated as usable — better to offer the link than hide it
+        "whatsapp": f"https://wa.me/{digits}" if is_mobile is not False else "",
+    }
 
 
 def _ctx():
@@ -283,10 +281,8 @@ def geocode(place):
             f"Couldn't find '{place}'. Try a more specific form like 'Leeds, United Kingdom'."
         )
 
-    if geo["country_code"] in BLOCKED_COUNTRIES or geo["country"].strip().lower() == "india":
-        raise LeadFinderError(
-            "This tool is scoped to markets outside India. Pick a city in another country."
-        )
+    if geo["country_code"] in BLOCKED_COUNTRIES:
+        raise LeadFinderError(f"{geo['country']} is not currently supported.")
     return geo
 
 
@@ -362,27 +358,85 @@ def _address(tags):
     return " ".join(b for b in bits if b).strip()
 
 
+CLOSED_NAME_HINTS = (
+    "permanently closed", "closed down", "now closed", "ceased trading",
+    "out of business", "under new management", "to let", "for lease",
+    "coming soon", "opening soon", "site of former", "former ",
+)
+
+
 def _looks_closed(tags):
     """
     True if the OSM tags say this business is gone. Filters out permanently
     closed shops so you never pitch a shut door.
+
+    Five independent signals — a business only has to trip one.
     """
-    # lifecycle prefixes: disused:shop=bakery, abandoned:amenity=cafe, was:shop=...
+    # 1. lifecycle prefixes: disused:shop=bakery, abandoned:amenity=cafe, was:shop=...
     for key in tags:
         if ":" in key and key.split(":", 1)[0] in CLOSED_MARKERS:
             return True
-    # explicit closure flags
-    for flag in ("disused", "abandoned", "closed"):
+
+    # 2. explicit closure flags
+    for flag in ("disused", "abandoned", "closed", "demolished", "razed"):
         if tags.get(flag) in ("yes", "true", "1"):
             return True
-    if tags.get("shop") == "vacant" or tags.get("end_date"):
+
+    # 3. vacant units and anything with an end date
+    if tags.get("shop") in ("vacant", "empty") or tags.get("office") == "vacant":
         return True
-    if (tags.get("opening_hours") or "").strip().lower() in ("closed", "off"):
+    if tags.get("end_date") or tags.get("demolished:building"):
         return True
+    if tags.get("building") in ("ruins", "ruin", "collapsed"):
+        return True
+    if tags.get("abandoned") or tags.get("ruins") == "yes":
+        return True
+
+    # 4. opening hours that say it never opens
+    oh = (tags.get("opening_hours") or "").strip().lower()
+    if oh in ("closed", "off", "no", "none"):
+        return True
+
+    # 5. the name itself announces it — surprisingly common in OSM
+    name = (tags.get("name") or "").lower()
+    if any(h in name for h in CLOSED_NAME_HINTS):
+        return True
+
+    # 6. under construction / not open yet — real, but not yet a customer
+    if tags.get("construction") or tags.get("proposed") or tags.get("planned"):
+        return True
+    if tags.get("building") == "construction":
+        return True
+
     return False
 
 
-def parse_elements(elements, niche, place_label, country):
+def _activity_signals(tags, edited):
+    """
+    Positive evidence the business is actually trading. Used both to rank and,
+    in strict mode, to exclude listings that show no sign of life at all.
+    Returns (count, list_of_reasons).
+    """
+    hits = []
+    if tags.get("opening_hours") and tags["opening_hours"].strip().lower() not in ("closed", "off"):
+        hits.append("opening hours listed")
+    if tags.get("phone") or tags.get("contact:phone") or tags.get("contact:mobile"):
+        hits.append("phone listed")
+    if any(k.startswith("contact:") for k in tags):
+        hits.append("contact details tagged")
+    if tags.get("check_date") or tags.get("survey:date"):
+        hits.append("surveyed on the ground")
+    if tags.get("addr:housenumber") and tags.get("addr:street"):
+        hits.append("full street address")
+    if tags.get("wheelchair") or tags.get("payment:cash") or tags.get("cuisine") \
+            or tags.get("outdoor_seating") or tags.get("takeaway") or tags.get("delivery"):
+        hits.append("operational detail tagged")
+    if edited and edited >= "2023-01":
+        hits.append("recently edited in OSM")
+    return len(hits), hits
+
+
+def parse_elements(elements, niche, place_label, country, country_code="", min_activity=0):
     out = []
     for el in elements:
         tags = el.get("tags", {})
@@ -412,6 +466,21 @@ def parse_elements(elements, niche, place_label, country):
         last_seen = tags.get("check_date") or tags.get("survey:date") or ""
         edited = (el.get("timestamp") or "")[:10]
 
+        # proof-of-life scoring — in strict mode, listings with no evidence of
+        # trading at all are dropped rather than shown as leads
+        act_count, act_reasons = _activity_signals(tags, edited)
+        if min_activity and act_count < min_activity:
+            continue
+
+        ch = phone_channels(phone, country_code)
+        if not ch.get("whatsapp"):
+            # OSM sometimes carries a separate WhatsApp-only number
+            wa = _first(tags, ["contact:whatsapp", "whatsapp"])
+            if wa:
+                wch = phone_channels(wa, country_code)
+                if wch.get("whatsapp"):
+                    ch = {**ch, "whatsapp": wch["whatsapp"], "e164": ch.get("e164") or wch["e164"]}
+
         out.append({
             "id": f"{el.get('type','n')}{el.get('id')}",
             "name": name,
@@ -429,6 +498,19 @@ def parse_elements(elements, niche, place_label, country):
             "lat": lat,
             "lon": lon,
             "osm_url": f"https://www.openstreetmap.org/{el.get('type')}/{el.get('id')}",
+            # new in v1.2
+            "whatsapp": ch.get("whatsapp", ""),
+            "phone_e164": ch.get("e164", ""),
+            "is_mobile": ch.get("is_mobile"),
+            "activity": act_count,
+            "activity_reasons": act_reasons,
+            # personalised Foundry previews — this business's own name, city,
+            # phone and current site already inside the demo, ready to paste
+            # straight into a DM
+            **foundry_links(niche, business=name, city=place_label, phone=phone),
+            "segment": SEGMENTS.get(niche, ""),
+            # Google Maps verification, straight from the OSM coordinates
+            **maps_links(name, lat, lon, _address(tags), place_label),
         })
     return out
 
@@ -596,6 +678,10 @@ def score(lead):
         s += 10          # actively maintained listing = business is alive
     if lead.get("owner"):
         s += 5           # you know who to ask for by name
+    if lead.get("whatsapp"):
+        s += 20          # reachable on WhatsApp — by far the highest reply rate
+    # proof the business is actually trading, capped so it can't dominate
+    s += min(lead.get("activity", 0), 5) * 4
     # freshness: data touched in the last ~2 years is far more likely to be a
     # live, still-open business
     vd = lead.get("verified_date", "")
@@ -607,6 +693,10 @@ def score(lead):
 
 
 def reachability(lead):
+    if lead.get("whatsapp") and lead.get("email"):
+        return "WhatsApp + Email"
+    if lead.get("whatsapp"):
+        return "WhatsApp"
     if lead.get("phone") and lead.get("email"):
         return "Phone + Email"
     if lead.get("phone"):
@@ -620,7 +710,7 @@ def reachability(lead):
 
 # ─────────────────────────── main entry point ─────────────────────────────────
 
-def find_leads(niche, place, limit=60, mode="no_website", check_sites=True):
+def find_leads(niche, place, limit=60, mode="no_website", check_sites=True, strict=True):
     """
     mode:
       'no_website'  -> only businesses with no website tag at all
@@ -634,9 +724,17 @@ def find_leads(niche, place, limit=60, mode="no_website", check_sites=True):
     query = _build_query(NICHES[niche], geo["bbox"], limit * 4)
     result = _overpass(query)
 
+    # strict mode requires at least two independent signs the business is
+    # trading. Thinly-mapped regions (India, much of Africa/SE Asia) would
+    # return almost nothing under that rule, so it relaxes there.
+    thin = geo["country_code"] in ("in", "pk", "bd", "lk", "np", "ng", "ke",
+                                   "id", "ph", "vn", "th", "eg", "za")
+    min_activity = (1 if thin else 2) if strict else 0
+
     leads = parse_elements(
         result.get("elements", []), niche,
         geo["display_name"].split(",")[0], geo["country"],
+        country_code=geo["country_code"], min_activity=min_activity,
     )
 
     # de-duplicate: OSM often has the same shop as both a node and a building way
@@ -704,6 +802,9 @@ def find_leads(niche, place, limit=60, mode="no_website", check_sites=True):
         "scanned": len(unique),
         "found": len(chosen),
         "leads": final,
+        "whatsapp_count": sum(1 for l in final if l.get("whatsapp")),
+        "foundry_demo": foundry_demo(niche) or "",
+        "note": INDIA_NOTE if geo["country_code"] == "in" else "",
     }
 
 

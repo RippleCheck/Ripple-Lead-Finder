@@ -21,6 +21,7 @@ from datetime import datetime
 from flask import Flask, Response, jsonify, request, send_from_directory
 
 import engine
+import insta
 import messages
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -42,6 +43,11 @@ DEFAULT_CONFIG = {
     "openai_model": "gpt-4o-mini",
     "anthropic_api_key": "",
     "anthropic_model": "claude-sonnet-5",
+    "grok_api_key": "",
+    "grok_model": "grok-2-latest",
+    "lang": "en",
+    "agency": "",          # your brand, shown on the personalised Foundry demo
+    "insta_check": False,
 }
 
 
@@ -85,7 +91,14 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_niche ON leads(niche)")
         # migrate old databases in place — safe to run every startup
         for col in ("owner TEXT DEFAULT ''", "verified_date TEXT DEFAULT ''",
-                    "starred INTEGER DEFAULT 0", "links_ok TEXT DEFAULT '{}'"):
+                    "starred INTEGER DEFAULT 0", "links_ok TEXT DEFAULT '{}'",
+                    "whatsapp TEXT DEFAULT ''", "phone_e164 TEXT DEFAULT ''",
+                    "activity INTEGER DEFAULT 0", "segment TEXT DEFAULT ''",
+                    "foundry_demo TEXT DEFAULT ''", "foundry_app TEXT DEFAULT ''",
+                    "insta_status TEXT DEFAULT ''", "insta_last TEXT DEFAULT ''",
+                    "maps_verify TEXT DEFAULT ''", "maps_pin TEXT DEFAULT ''",
+                    "maps_street TEXT DEFAULT ''", "foundry_slug TEXT DEFAULT ''",
+                    "foundry_token TEXT DEFAULT ''"):
             try:
                 conn.execute(f"ALTER TABLE leads ADD COLUMN {col}")
             except sqlite3.OperationalError:
@@ -113,8 +126,11 @@ def save_leads(leads):
             conn.execute("""
                 INSERT INTO leads (id,name,niche,city,country,address,phone,email,website,
                                    socials,opening_hours,lat,lon,osm_url,reason,score,
-                                   reachability,owner,verified_date,links_ok,stage,found_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'New',?)
+                                   reachability,owner,verified_date,links_ok,whatsapp,phone_e164,
+                                   activity,segment,foundry_demo,foundry_app,
+                                   maps_verify,maps_pin,maps_street,
+                                   foundry_slug,foundry_token,stage,found_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'New',?)
             """, (
                 l["id"], l["name"], l["niche"], l["city"], l.get("country", ""),
                 l.get("address", ""), l.get("phone", ""), l.get("email", ""),
@@ -123,6 +139,10 @@ def save_leads(leads):
                 l.get("osm_url", ""), l.get("reason", ""), l.get("score", 0),
                 l.get("reachability", ""), l.get("owner", ""), l.get("verified_date", ""),
                 json.dumps(l.get("links_ok", {})),
+                l.get("whatsapp", ""), l.get("phone_e164", ""), l.get("activity", 0),
+                l.get("segment", ""), l.get("foundry_demo", ""), l.get("foundry_app", ""),
+                l.get("maps_verify", ""), l.get("maps_pin", ""), l.get("maps_street", ""),
+                l.get("foundry_slug", ""), l.get("foundry_token", ""),
                 datetime.utcnow().isoformat(timespec="seconds"),
             ))
             new += 1
@@ -140,11 +160,37 @@ def index():
 def api_niches():
     cfg = load_config()
     provider = cfg.get("ai_provider", "openai")
-    key = cfg.get("anthropic_api_key") if provider == "anthropic" else cfg.get("openai_api_key")
+    key = {"openai": cfg.get("openai_api_key"),
+           "anthropic": cfg.get("anthropic_api_key"),
+           "grok": cfg.get("grok_api_key")}.get(provider, "")
     return jsonify({
         "niches": sorted(engine.NICHES.keys()),
-        "has_openai": bool(key or os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")),
+        "segments": engine.segments(),
+        "has_openai": bool(key),
+        "lang": cfg.get("lang", "en"),
     })
+
+
+@app.route("/api/manual-link", methods=["POST"])
+def api_manual_link():
+    """
+    Build Foundry links for a business typed in by hand — same encrypted `?d=`
+    payload a real lead produces, for prospects found outside Lead Finder.
+    """
+    b = request.get_json(force=True) or {}
+    niche = (b.get("niche") or "").strip()
+    business = (b.get("business") or "").strip()
+    if not business:
+        return jsonify({"error": "business name required"}), 400
+    if niche not in engine.NICHES:
+        return jsonify({"error": f"unknown trade '{niche}'"}), 400
+
+    links = engine.foundry_links(
+        niche, business=business,
+        city=(b.get("city") or "").strip(),
+        phone=(b.get("phone") or "").strip(),
+    )
+    return jsonify(links or {"error": "no Foundry template for that trade"})
 
 
 @app.route("/api/health")
@@ -243,8 +289,14 @@ def api_settings_get():
         "ai_provider": cfg.get("ai_provider", "openai"),
         "openai_model": cfg.get("openai_model", "gpt-4o-mini"),
         "anthropic_model": cfg.get("anthropic_model", "claude-sonnet-5"),
+        "grok_model": cfg.get("grok_model", "grok-2-latest"),
+        "lang": cfg.get("lang", "en"),
+        "agency": cfg.get("agency", ""),
+        "insta_check": bool(cfg.get("insta_check")),
+        "insta_available": insta.available(),
         "has_openai_key": bool(cfg.get("openai_api_key")),
         "has_anthropic_key": bool(cfg.get("anthropic_api_key")),
+        "has_grok_key": bool(cfg.get("grok_api_key")),
     })
 
 
@@ -257,21 +309,27 @@ def api_settings_post():
     """
     body = request.get_json(force=True) or {}
     cfg = load_config()
-    for k in ("name", "portfolio", "turnaround", "email",
-              "ai_provider", "openai_model", "anthropic_model"):
+    for k in ("name", "portfolio", "turnaround", "email", "ai_provider",
+              "openai_model", "anthropic_model", "grok_model", "lang", "agency"):
         if k in body:
             cfg[k] = body[k]
-    for k in ("openai_api_key", "anthropic_api_key"):
+    if "insta_check" in body:
+        cfg["insta_check"] = bool(body["insta_check"])
+    for k in ("openai_api_key", "anthropic_api_key", "grok_api_key"):
         if body.get(k):  # only overwrite if they actually typed one
             cfg[k] = body[k]
     save_config(cfg)
     messages.apply_settings(cfg)
-    active_key = cfg.get("anthropic_api_key") if cfg.get("ai_provider") == "anthropic" \
-        else cfg.get("openai_api_key")
+    engine.set_agency(cfg.get("agency", ""))
+    prov = cfg.get("ai_provider", "none")
+    active_key = {"openai": cfg.get("openai_api_key"),
+                  "anthropic": cfg.get("anthropic_api_key"),
+                  "grok": cfg.get("grok_api_key")}.get(prov, "")
     return jsonify({
         "ok": True,
         "has_openai_key": bool(cfg.get("openai_api_key")),
         "has_anthropic_key": bool(cfg.get("anthropic_api_key")),
+        "has_grok_key": bool(cfg.get("grok_api_key")),
         "ai_ready": bool(active_key),
     })
 
@@ -289,7 +347,8 @@ def api_search():
         return jsonify({"error": "Type a city and country, e.g. 'Leeds, United Kingdom'."}), 400
 
     try:
-        result = engine.find_leads(niche, place, limit=limit, mode=mode)
+        result = engine.find_leads(niche, place, limit=limit, mode=mode,
+                                   strict=bool(body.get("strict", True)))
     except engine.LeadFinderError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
@@ -310,7 +369,7 @@ def api_search():
 def _lead_filters(args):
     """Shared WHERE builder so the list and the CSV export always agree."""
     params, where = [], []
-    for field in ("niche", "country", "city", "stage"):
+    for field in ("niche", "country", "city", "stage", "segment"):
         v = args.get(field)
         if v:
             where.append(f"{field}=?")
@@ -387,11 +446,44 @@ def api_message():
         return jsonify({"error": "Lead not found"}), 404
     lead = row_to_lead(row)
 
+    lang = body.get("lang") or load_config().get("lang", "en")
     if use_ai:
-        text, source = messages.ai_rewrite(lead, kind)
+        text, source = messages.ai_rewrite(lead, kind, lang=lang)
     else:
-        text, source = messages.build(lead, kind), "template"
+        text, source = messages.build(lead, kind, lang), "template"
     return jsonify({"message": text, "source": source})
+
+
+@app.route("/api/insta", methods=["POST"])
+def api_insta():
+    """
+    Optional Instagram activity check. Off unless enabled in Settings.
+    Heavily rate-limited by design — see insta.py for why.
+    """
+    if not load_config().get("insta_check"):
+        return jsonify({"error": "Instagram check is off. Enable it in Settings first."}), 400
+    if not insta.available():
+        return jsonify({"error": "instaloader is not installed. Run: pip install instaloader"}), 400
+
+    body = request.get_json(force=True) or {}
+    ids = body.get("ids") or []
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM leads WHERE id IN (%s)" % ",".join("?" * len(ids)), ids
+        ).fetchall() if ids else []
+    leads = [row_to_lead(r) for r in rows]
+
+    result = insta.check_many(leads, max_checks=int(body.get("max", 12)))
+    out = {}
+    with db() as conn:
+        for l in leads:
+            info = l.get("insta")
+            if not info:
+                continue
+            out[l["id"]] = info
+            conn.execute("UPDATE leads SET insta_status=?, insta_last=? WHERE id=?",
+                         (info["status"], info.get("last_post", ""), l["id"]))
+    return jsonify({"results": out, **result})
 
 
 @app.route("/api/export.csv")
@@ -407,8 +499,10 @@ def api_export():
     w = csv.writer(buf)
     w.writerow(["Name", "Starred", "Owner/Operator", "Niche", "City", "Country", "Address",
                 "Phone", "Email", "Website", "Facebook", "FB link live", "Instagram",
-                "IG link live", "WhatsApp", "Why they qualify", "Data verified",
-                "Score", "Reachability", "Stage", "Notes", "Found"])
+                "IG link live", "WhatsApp", "WhatsApp link", "Why they qualify", "Data verified", "Activity signals",
+                "Score", "Reachability", "Foundry slug", "Foundry token",
+                "Foundry website link", "Foundry dashboard link",
+                "Verify on Google Maps", "Street View", "Stage", "Notes", "Found"])
     def _lk(v):
         return {True: "live", False: "broken"}.get(v, "unchecked")
     for r in rows:
@@ -421,28 +515,76 @@ def api_export():
                     _lk(lk.get("facebook")) if soc.get("facebook") else "",
                     soc.get("instagram", ""),
                     _lk(lk.get("instagram")) if soc.get("instagram") else "",
-                    soc.get("whatsapp", ""), d["reason"], d.get("verified_date", ""),
-                    d["score"], d["reachability"], d["stage"], d["notes"], d["found_at"]])
+                    soc.get("whatsapp", ""), d.get("whatsapp", ""), d["reason"],
+                    d.get("verified_date", ""), d.get("activity", 0),
+                    d["score"], d["reachability"], d.get("foundry_slug", ""),
+                    d.get("foundry_token", ""), d.get("foundry_demo", ""),
+                    d.get("foundry_app", ""), d.get("maps_verify", ""),
+                    d.get("maps_street", ""), d["stage"], d["notes"], d["found_at"]])
     return Response(
         buf.getvalue(), mimetype="text/csv",
         headers={"Content-Disposition": "attachment; filename=leads.csv"},
     )
 
 
+def find_free_port(preferred=5000, tries=60):
+    """
+    Return the first port we can actually bind.
+
+    Port 5000 is taken on every modern Mac by AirPlay Receiver, which is a
+    system service — it survives closing your browser and it comes back after a
+    reboot. Rather than telling the user to go disable a macOS feature, we just
+    move to the next free port. Respects PORT= if the user sets one.
+    """
+    import socket
+    env_port = os.environ.get("PORT")
+    candidates = ([int(env_port)] if env_port and env_port.isdigit()
+                  else list(range(preferred, preferred + tries)))
+    for p in candidates:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind(("127.0.0.1", p))
+                return p
+            except OSError:
+                continue
+    # nothing in the range was free — let the OS pick anything
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 if __name__ == "__main__":
     init_db()
-    messages.apply_settings(load_config())  # load saved name/portfolio/OpenAI key, if any
+    _cfg = load_config()
+    messages.apply_settings(_cfg)                # name / portfolio / API keys
+    engine.set_agency(_cfg.get("agency", ""))    # agency name for Foundry links
+
+    port = find_free_port()
+    url = f"http://127.0.0.1:{port}"
     key_status = "ON" if os.environ.get("OPENAI_API_KEY") else "off (templates only — still works)"
+
     print("\n" + "=" * 62)
-    print("  LEAD FINDER — running locally")
+    print("  RIPPLE LEAD FINDER — running locally")
     print("=" * 62)
-    print(f"  Dashboard : http://127.0.0.1:5000")
+    print(f"  Dashboard : {url}")
+    if port != 5000:
+        print("              (port 5000 was busy — most likely macOS AirPlay")
+        print("               Receiver — so we moved to a free one automatically)")
     print(f"  Database  : {DB}")
     print(f"  AI rewrite: {key_status}")
-    print(f"  Niches    : {len(engine.NICHES)} available")
-    print("=" * 62 + "\n")
+    print(f"  Trades    : {len(engine.NICHES)} available")
+    print("=" * 62)
+    print("  Leave this window open. Close it to stop the server.\n")
+
+    # open the browser ourselves, now that we know the real port
+    if os.environ.get("NO_BROWSER") != "1":
+        import threading
+        import webbrowser
+        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+
     # threaded=True is the fix for "the app freezes / won't reload during a
     # search": Flask's dev server is SINGLE-threaded by default, so a 40-second
     # OpenStreetMap search used to block every other request — including simply
     # reloading the page. With threads, searches run in parallel with the UI.
-    app.run(host="127.0.0.1", port=5000, debug=False, threaded=True)
+    app.run(host="127.0.0.1", port=port, debug=False, threaded=True)

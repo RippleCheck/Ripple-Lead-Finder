@@ -31,13 +31,13 @@ if ! $PY -c "import flask" &>/dev/null; then
 fi
 
 echo ""
-echo "Launching... your browser should open automatically."
-echo "If it doesn't, go to: http://127.0.0.1:5000"
-echo "Leave this window open while you use it. Close it to stop the server."
+echo "Launching... your browser will open on its own."
+echo "The exact address is printed below — port 5000 is often taken on macOS"
+echo "by AirPlay Receiver, so the app picks the next free port automatically."
 echo ""
 
-( sleep 2 && $PY -c "import webbrowser; webbrowser.open('http://127.0.0.1:5000')" ) &
-
+# app.py finds a free port and opens the browser itself, so no port is
+# hardcoded here — that used to open the wrong address when 5000 was busy.
 $PY app.py
 
 read -p "Server stopped. Press Enter to close..."

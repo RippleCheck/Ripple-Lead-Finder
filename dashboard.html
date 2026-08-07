@@ -193,7 +193,10 @@
       <h1>Ripple Lead Finder</h1>
       <div class="sub">Live worldwide search for businesses with no website — powered by OpenStreetMap + Photon, filtered to skip closed shops.</div>
     </div>
-    <button class="settings-btn" onclick="openSettings()">Settings</button>
+    <div class="row" style="gap:8px;margin-top:0">
+      <button class="settings-btn" onclick="openManual()">Manual link</button>
+      <button class="settings-btn" onclick="openSettings()">Settings</button>
+    </div>
   </div>
 
   <div class="searchbar">
@@ -227,6 +230,13 @@
       <label>Max</label>
       <input type="number" id="limit" value="60" min="10" max="300" style="width:78px">
     </div>
+    <div class="fld">
+      <label>Quality</label>
+      <select id="strict">
+        <option value="1">Strict &mdash; active only</option>
+        <option value="0">Wide &mdash; everything</option>
+      </select>
+    </div>
     <button class="btn" id="goBtn" onclick="doSearch()">Find Businesses</button>
   </div>
 
@@ -257,11 +267,14 @@
       <input type="checkbox" id="fFresh" onchange="renderList()"> Fresh data only
     </label>
     <input type="text" id="fq" placeholder="Search saved leads..." oninput="debouncedLoad()">
+    <button class="btn ghost sm" id="viewBtn" onclick="toggleView()">Board view</button>
     <button class="btn ghost sm" onclick="clearFilters()">Show all leads</button>
     <button class="btn ghost sm" onclick="exportCsv()">Export CSV</button>
   </div>
 
-  <div class="layout">
+  <div id="board" style="display:none"></div>
+
+  <div class="layout" id="layout">
     <div class="list" id="list"><div class="ph">No leads saved yet.<br>Pick an industry, country and city above, then hit Find Businesses.</div></div>
     <div class="detail" id="detail"><div class="ph">Select a business to see its contact details and a ready-to-send message.</div></div>
   </div>
@@ -292,6 +305,48 @@
   </div>
 </div>
 
+<!-- manual link builder -->
+<div class="modal-backdrop" id="manualBackdrop">
+  <div class="modal" style="width:520px">
+    <h3>Build a link by hand</h3>
+    <div class="note">For a business you found somewhere else &mdash; type the details in and get the same encrypted Foundry links a lead would produce.</div>
+
+    <label>Business name</label>
+    <input type="text" id="m_biz" placeholder="Modern Beauty Salon" oninput="buildManual()">
+
+    <label>Trade</label>
+    <select id="m_trade" onchange="buildManual()"></select>
+
+    <label>City</label>
+    <input type="text" id="m_city" placeholder="Delhi" oninput="buildManual()">
+
+    <label>Phone</label>
+    <input type="text" id="m_phone" placeholder="+91-904-502-1076" oninput="buildManual()">
+
+    <div class="d-label" style="margin-top:18px">Website demo</div>
+    <div class="mbox" id="m_demo" style="font-size:11px;word-break:break-all;min-height:0">&mdash;</div>
+    <div class="row" style="margin-top:6px">
+      <button class="btn sm" onclick="copyManual(this,'m_demo')">Copy website link</button>
+      <button class="btn ghost sm" onclick="openManualLink('m_demo')">Open</button>
+    </div>
+
+    <div class="d-label" style="margin-top:14px">Dashboard demo</div>
+    <div class="mbox" id="m_app" style="font-size:11px;word-break:break-all;min-height:0">&mdash;</div>
+    <div class="row" style="margin-top:6px">
+      <button class="btn sm" onclick="copyManual(this,'m_app')">Copy dashboard link</button>
+      <button class="btn ghost sm" onclick="openManualLink('m_app')">Open</button>
+    </div>
+
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost sm" onclick="copyManualBoth(this)">Copy both</button>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn ghost sm" onclick="document.getElementById('manualBackdrop').classList.remove('open')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- settings -->
 <div class="modal-backdrop" id="settingsBackdrop">
   <div class="modal">
@@ -304,6 +359,9 @@
     <label>Portfolio link (added to cold emails)</label>
     <input type="text" id="s_portfolio" placeholder="https://your-portfolio-link.com">
 
+    <label>Your agency name (shown on the Foundry demo)</label>
+    <input type="text" id="s_agency" placeholder="Matrix Devs">
+
     <label>Turnaround you promise</label>
     <input type="text" id="s_turnaround" placeholder="5 days">
 
@@ -313,7 +371,9 @@
     <label>AI rewrite provider</label>
     <div class="provider-row">
       <div class="opt" id="prov_openai" onclick="setProvider('openai')">OpenAI</div>
-      <div class="opt" id="prov_anthropic" onclick="setProvider('anthropic')">Anthropic (Claude)</div>
+      <div class="opt" id="prov_anthropic" onclick="setProvider('anthropic')">Anthropic</div>
+      <div class="opt" id="prov_grok" onclick="setProvider('grok')">Grok</div>
+      <div class="opt" id="prov_none" onclick="setProvider('none')">None</div>
     </div>
     <div class="hint">Optional either way — template messages work with no key at all. A key just makes every message uniquely worded.</div>
 
@@ -329,6 +389,26 @@
       <label>Anthropic model</label>
       <input type="text" id="s_anmodel" placeholder="claude-sonnet-5">
     </div>
+    <div id="grokFields">
+      <label>Grok (xAI) API key <span class="keybadge off" id="gkBadge">not set</span></label>
+      <input type="password" id="s_gkkey" placeholder="xai-...">
+      <label>Grok model</label>
+      <input type="text" id="s_gkmodel" placeholder="grok-2-latest">
+    </div>
+
+    <label>Message language (templates)</label>
+    <select id="s_lang">
+      <option value="en">English</option>
+      <option value="hi">Hindi</option>
+      <option value="hinglish">Hinglish</option>
+      <option value="es">Spanish</option>
+    </select>
+    <div class="hint">Applies to the social DM. Cold email and call scripts stay in English.</div>
+
+    <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;opacity:1">
+      <input type="checkbox" id="s_insta" style="width:auto"> Check Instagram activity <span id="instaAvail" style="font-size:11px;opacity:.6"></span>
+    </label>
+    <div class="hint"><b>Off by default, and that is the right default.</b> Instagram's terms prohibit automated access, and anonymous lookups get rate-limited within a handful of requests. Capped at 12 checks per run with a 3s gap. A blocked check is reported as "unknown", never as "inactive".</div>
     <div class="hint">Leaving a key field blank keeps the previously saved key.</div>
 
     <div class="modal-actions">
@@ -339,11 +419,11 @@
 </div>
 
 <script>
-let LEADS = [], selId = null, msgMode = "fb", hasAI = false, provider = "openai";
+let LEADS = [], selId = null, msgMode = "fb", hasAI = false, provider = "openai", LANG = "en";
 let STAGES_ALL = {};
 
 // Every OSM-covered country — India intentionally absent (also blocked server-side).
-const COUNTRIES = ["United Kingdom","United States","Australia","Canada","Ireland","New Zealand",
+const COUNTRIES = ["United Kingdom","United States","India","Australia","Canada","Ireland","New Zealand",
 "Germany","France","Spain","Italy","Netherlands","Belgium","Portugal","Austria","Switzerland",
 "Sweden","Norway","Denmark","Finland","Iceland","Poland","Czechia","Slovakia","Hungary","Romania",
 "Bulgaria","Greece","Croatia","Slovenia","Serbia","Bosnia and Herzegovina","North Macedonia",
@@ -372,8 +452,14 @@ async function boot() {
   try {
     const r = await (await fetch("/api/niches")).json();
     hasAI = r.has_openai;
-    document.getElementById("niche").innerHTML =
-      r.niches.map(n => `<option${n==="Barber Shop"?" selected":""}>${n}</option>`).join("");
+    LANG = r.lang || "en";
+    const segs = r.segments || {};
+    document.getElementById("niche").innerHTML = Object.keys(segs).length
+      ? Object.keys(segs).sort().map(function(s){
+          return '<optgroup label="'+s+'">' + segs[s].map(function(n){
+            return '<option'+(n==="Barber Shop"?' selected':'')+'>'+n+'</option>'; }).join("") + '</optgroup>';
+        }).join("")
+      : r.niches.map(n => `<option${n==="Barber Shop"?" selected":""}>${n}</option>`).join("");
   } catch (e) {
     show("err", "Can't reach the local server. Make sure the app is still running (start.command / start.bat).");
   }
@@ -440,6 +526,7 @@ async function doSearch() {
         niche: document.getElementById("niche").value,
         place: place,
         mode: document.getElementById("mode").value,
+        strict: document.getElementById("strict").value === "1",
         limit: parseInt(document.getElementById("limit").value) || 60
       })
     });
@@ -463,7 +550,9 @@ async function doSearch() {
       `Added <b>${d.new_leads}</b> new leads` +
       (d.duplicates ? `, skipped ${d.duplicates} already saved.` : ".") +
       (d.found ? ` Showing <b>${d.filter_niche} in ${d.filter_city}</b> — hit "Show all leads" to see your whole list.` : "") +
-      (d.found === 0 ? " Try a bigger city, a more common industry, or switch mode to 'Both'." : "")
+      (d.found === 0 ? " Try a bigger city, a more common industry, or switch mode to 'Both'." : "") +
+      (d.note ? `<br><br><b>Note:</b> ${d.note}` : "") +
+      (d.whatsapp_count ? ` <b>${d.whatsapp_count}</b> of them are reachable on WhatsApp.` : "")
     );
     await loadLeads(d.filter_niche, d.filter_country, d.filter_city);
   } catch (e) {
@@ -518,6 +607,7 @@ async function loadLeads(forceNiche, forceCountry, forceCity) {
     renderStats(d.stages);
     renderProg();
     renderList();
+    if (BOARD) renderBoard();
   } catch (e) {
     show("err", "Lost connection to the local server.");
   }
@@ -643,7 +733,11 @@ function renderList() {
     if (l.owner) chips.push('<span class="chip">Owner known</span>');
     chips.push(linkChip(soc, lk, "facebook", "Facebook"));
     chips.push(linkChip(soc, lk, "instagram", "Instagram"));
-    if (soc.whatsapp) chips.push('<span class="chip flag">WhatsApp</span>');
+    if (l.whatsapp) chips.push('<span class="chip">WhatsApp</span>');
+    else if (soc.whatsapp) chips.push('<span class="chip flag">WhatsApp</span>');
+    if (l.activity >= 4) chips.push('<span class="chip">Active</span>');
+    if (l.insta_status === "active") chips.push('<span class="chip">IG active</span>');
+    else if (l.insta_status === "dormant") chips.push('<span class="chip warn">IG dormant</span>');
     if (l.verified_date && l.verified_date >= "2024-01") chips.push('<span class="chip">Fresh data</span>');
     if (!l.phone && !l.email && !Object.keys(soc).length)
       chips.push('<span class="chip warn">Walk in / look up</span>');
@@ -658,7 +752,7 @@ function renderList() {
         </div>
       </div>
       <div class="lead-reason">${esc(l.reason||"")}</div>
-      <div class="chips">${chips.join("")}</div>
+      <div class="chips">${chips.join("")}${l.maps_verify?`<span class="cpy" onclick="event.stopPropagation();window.open('${esc(l.maps_verify)}','_blank')">verify on maps</span>`:""}</div>
     </div>`;
   }).join("");
 }
@@ -707,10 +801,11 @@ function renderDetail() {
     <div class="d-section">
       <div class="d-label">Contact</div>
       ${l.address ? `<div class="crow">${icn("pin")} ${esc(l.address)}</div>` : ""}
-      ${l.phone ? `<div class="crow">${icn("phone")} <a href="tel:${esc(l.phone).replace(/[^+\d]/g,'')}">${esc(l.phone)}</a></div>`
+      ${l.phone ? `<div class="crow">${icn("phone")} <a href="tel:${esc(l.phone).replace(/[^+\d]/g,'')}">${esc(l.phone)}</a><span class="cpy" onclick="copyLink(this,'${encodeURIComponent(l.phone_e164||l.phone)}')">copy</span></div>`
                 : `<div class="crow missing">${icn("phone")} No phone in the map data</div>`}
-      ${l.email ? `<div class="crow">${icn("mail")} <a href="mailto:${esc(l.email)}">${esc(l.email)}</a></div>`
+      ${l.email ? `<div class="crow">${icn("mail")} <a href="mailto:${esc(l.email)}">${esc(l.email)}</a><span class="cpy" onclick="copyLink(this,'${encodeURIComponent(l.email)}')">copy</span></div>`
                 : `<div class="crow missing">${icn("mail")} No email in the map data</div>`}
+      ${l.whatsapp ? `<div class="crow">${icn("social")} <a href="${esc(l.whatsapp)}" target="_blank"><b>Message on WhatsApp &rarr;</b></a><span class="cpy" onclick="copyLink(this,'${encodeURIComponent(l.whatsapp)}')">copy</span></div>` : ""}
       ${l.website ? `<div class="crow">${icn("globe")} <a href="${esc(l.website)}" target="_blank">${esc(l.website)}</a></div>` : ""}
       ${socRows}
       ${l.opening_hours ? `<div class="crow">${icn("clock")} ${esc(l.opening_hours)}</div>` : ""}
@@ -741,6 +836,7 @@ function renderDetail() {
           .map(([k,lab]) => `<div class="mtab ${msgMode===k?'on':''}" onclick="setMode('${k}')">${lab}</div>`).join("")}
       </div>
       <div class="mbox" id="mbox">Loading...</div>
+      ${l.foundry_demo ? `<div style="font-size:11px;color:var(--mut);margin-top:6px;line-height:1.45">Tip: paste the Foundry link above into the message &mdash; "I built you this" lands far harder than "I could build you one".</div>` : ""}
       <div class="row">
         <button class="btn sm" onclick="copyMsg(this)">Copy</button>
         <button class="btn ghost sm" onclick="getMessage(true)" ${hasAI?"":"disabled title='Add an API key in Settings to enable'"}>
@@ -749,6 +845,24 @@ function renderDetail() {
         <button class="btn ghost sm" onclick="del('${l.id}')">Delete lead</button>
       </div>
     </div>
+
+    ${l.foundry_demo ? `<div class="d-section">
+      <div class="d-label">Ripple Foundry &mdash; ${esc(l.niche)}</div>
+      <div style="font-size:11.5px;color:var(--mut);margin-bottom:8px;line-height:1.45">
+        Live demos with <b>${esc(l.name)}</b> already inside them. Copy a link, paste it straight into a DM.
+      </div>
+      <div class="crow">${icn("globe")}
+        <a href="${esc(l.foundry_demo)}" target="_blank"><b>Open website demo &rarr;</b></a>
+        <span class="cpy" onclick="copyLink(this,'${encodeURIComponent(l.foundry_demo)}')">copy website link</span>
+      </div>
+      ${l.foundry_app ? `<div class="crow">${icn("doc")}
+        <a href="${esc(l.foundry_app)}" target="_blank"><b>Open dashboard demo &rarr;</b></a>
+        <span class="cpy" onclick="copyLink(this,'${encodeURIComponent(l.foundry_app)}')">copy dashboard link</span>
+      </div>` : ""}
+      ${l.foundry_app ? `<div class="row" style="margin-top:8px">
+        <button class="btn ghost sm" onclick="copyLink(this,'${encodeURIComponent(l.foundry_demo + "\n" + l.foundry_app)}')">Copy both links</button>
+      </div>` : ""}
+    </div>` : ""}
 
     <div class="d-section">
       <div class="d-label">Build their website</div>
@@ -788,6 +902,21 @@ function copyBrief(btn) {
 
 function setMode(m) { msgMode = m; renderDetail(); getMessage(false); }
 
+async function checkInsta(id, btn){
+  var o=btn.textContent; btn.textContent="...";
+  try{
+    var d=await (await fetch("/api/insta",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ids:[id],max:1})})).json();
+    if(d.error){ show("err", d.error); btn.textContent=o; return; }
+    var r=d.results && d.results[id];
+    if(r){ var l=LEADS.find(function(x){return x.id===id;});
+      if(l){ l.insta_status=r.status; l.insta_last=r.last_post||""; }
+      renderDetail(); renderList();
+      if(r.note) show("info","Instagram: "+r.note);
+    } else { btn.textContent=o; }
+  }catch(e){ show("err","Instagram check failed."); btn.textContent=o; }
+}
+
 async function getMessage(useAI) {
   const box = document.getElementById("mbox");
   if (!box) return;
@@ -795,13 +924,20 @@ async function getMessage(useAI) {
   try {
     const d = await (await fetch("/api/message", {
       method: "POST", headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({id: selId, kind: msgMode, ai: useAI})
+      body: JSON.stringify({id: selId, kind: msgMode, ai: useAI, lang: LANG})
     })).json();
     box.textContent = d.message || "(empty)";
     if (d.source && d.source.startsWith("fallback")) {
       show("err", "AI rewrite failed — showing the template instead, which still works. (" + esc(d.source) + ")");
     }
   } catch (e) { box.textContent = "Could not load message."; }
+}
+
+function copyLink(btn, enc) {
+  navigator.clipboard.writeText(decodeURIComponent(enc)).then(function(){
+    var o = btn.textContent; btn.textContent = "\u2713 Copied";
+    setTimeout(function(){ btn.textContent = o; }, 1400);
+  });
 }
 
 function copyMsg(btn) {
@@ -836,10 +972,109 @@ async function del(id) {
 // ── settings ──────────────────────────────────────────────────────────────────
 function setProvider(p) {
   provider = p;
-  document.getElementById("prov_openai").classList.toggle("on", p==="openai");
-  document.getElementById("prov_anthropic").classList.toggle("on", p==="anthropic");
-  document.getElementById("openaiFields").style.display = p==="openai" ? "" : "none";
+  ["openai","anthropic","grok","none"].forEach(function(x){
+    var el=document.getElementById("prov_"+x); if(el) el.classList.toggle("on", p===x); });
+  document.getElementById("openaiFields").style.display    = p==="openai"    ? "" : "none";
   document.getElementById("anthropicFields").style.display = p==="anthropic" ? "" : "none";
+  document.getElementById("grokFields").style.display      = p==="grok"      ? "" : "none";
+}
+
+/* ── manual link builder ─────────────────────────────────────── */
+async function openManual(){
+  var sel=document.getElementById("m_trade");
+  if(!sel.options.length){
+    try{
+      var r=await (await fetch("/api/niches")).json();
+      var segs=r.segments||{};
+      sel.innerHTML = Object.keys(segs).sort().map(function(s){
+        return '<optgroup label="'+s+'">'+segs[s].map(function(n){
+          return '<option'+(n==="Beauty Salon"?' selected':'')+'>'+n+'</option>';}).join("")+'</optgroup>';
+      }).join("");
+    }catch(e){ show("err","Couldn't load trades."); return; }
+  }
+  document.getElementById("manualBackdrop").classList.add("open");
+  buildManual();
+}
+
+/* every keystroke fires a request; without a sequence number a slow early
+   reply can land after a fast later one and show a link for a half-typed name */
+var MSEQ=0;
+async function buildManual(){
+  var seq=++MSEQ;
+  var biz=document.getElementById("m_biz").value.trim();
+  if(!biz){ MSEQ++; document.getElementById("m_demo").textContent="—";
+            document.getElementById("m_app").textContent="—"; return; }
+  try{
+    var d=await (await fetch("/api/manual-link",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({business:biz,niche:document.getElementById("m_trade").value,
+        city:document.getElementById("m_city").value.trim(),
+        phone:document.getElementById("m_phone").value.trim()})})).json();
+    if(seq!==MSEQ) return;                       // a newer keystroke already won
+    document.getElementById("m_demo").textContent = d.foundry_demo || "no template for this trade";
+    document.getElementById("m_app").textContent  = d.foundry_app  || "no template for this trade";
+  }catch(e){ show("err","Link build failed."); }
+}
+
+function copyManual(btn,id){
+  var t=document.getElementById(id).textContent.trim();
+  if(!t||t==="—") return;
+  navigator.clipboard.writeText(t).then(function(){
+    var o=btn.textContent; btn.textContent="\u2713 Copied";
+    setTimeout(function(){btn.textContent=o;},1400);});
+}
+function copyManualBoth(btn){
+  var a=document.getElementById("m_demo").textContent.trim();
+  var b=document.getElementById("m_app").textContent.trim();
+  if(!a||a==="—") return;
+  navigator.clipboard.writeText(a+"\n"+b).then(function(){
+    var o=btn.textContent; btn.textContent="\u2713 Copied both";
+    setTimeout(function(){btn.textContent=o;},1400);});
+}
+function openManualLink(id){
+  var t=document.getElementById(id).textContent.trim();
+  if(t&&t!=="—"&&t.indexOf("http")===0) window.open(t,"_blank");
+}
+
+/* ── Kanban board ────────────────────────────────────────────── */
+var BOARD=false, STAGES=["New","Contacted","Replied","Won","Lost"];
+function toggleView(){
+  BOARD=!BOARD;
+  document.getElementById("board").style.display = BOARD ? "" : "none";
+  document.getElementById("layout").style.display = BOARD ? "none" : "flex";
+  document.getElementById("viewBtn").textContent = BOARD ? "List view" : "Board view";
+  if(BOARD) renderBoard();
+}
+function renderBoard(){
+  var rows = LEADS.filter(passesFilters);
+  document.getElementById("board").innerHTML =
+    '<div class="kb">' + STAGES.map(function(s){
+      var inS = rows.filter(function(l){ return (l.stage||"New")===s; });
+      return '<div class="kcol" data-stage="'+s+'" ondragover="kOver(event)" '+
+             'ondragleave="kLeave(event)" ondrop="kDrop(event)">'+
+             '<div class="kh"><span>'+s+'</span><span>'+inS.length+'</span></div>'+
+             inS.map(function(l){
+               return '<div class="kc" draggable="true" data-id="'+l.id+'" '+
+                 'ondragstart="kStart(event)" ondragend="kEnd(event)" '+
+                 'onclick="pick(\''+l.id+'\')">'+
+                 '<b>'+esc(l.name)+'</b><span>'+esc(l.niche)+' · '+esc(l.city)+
+                 (l.whatsapp?' · WhatsApp':'')+'</span></div>';
+             }).join("") + '</div>';
+    }).join("") + '</div>';
+}
+function kStart(e){ e.dataTransfer.setData("id", e.target.dataset.id);
+  e.target.classList.add("drag"); }
+function kEnd(e){ e.target.classList.remove("drag"); }
+function kOver(e){ e.preventDefault(); e.currentTarget.classList.add("over"); }
+function kLeave(e){ e.currentTarget.classList.remove("over"); }
+function kDrop(e){
+  e.preventDefault(); e.currentTarget.classList.remove("over");
+  var id=e.dataTransfer.getData("id"), s=e.currentTarget.dataset.stage;
+  var l=LEADS.find(function(x){return x.id===id;});
+  if(!l||l.stage===s) return;
+  l.stage=s; renderBoard();
+  fetch("/api/lead/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({stage:s})}).then(function(){ loadLeads(); });
 }
 
 async function openSettings() {
@@ -852,9 +1087,17 @@ async function openSettings() {
     document.getElementById("s_email").value = s.email || "";
     document.getElementById("s_oamodel").value = s.openai_model || "gpt-4o-mini";
     document.getElementById("s_anmodel").value = s.anthropic_model || "claude-sonnet-5";
-    document.getElementById("s_oakey").value = "";
-    document.getElementById("s_ankey").value = "";
+    document.getElementById("s_gkmodel").value = s.grok_model || "grok-2-latest";
+    document.getElementById("s_lang").value = s.lang || "en";
+    document.getElementById("s_agency").value = s.agency || "";
+    document.getElementById("s_insta").checked = !!s.insta_check;
+    document.getElementById("instaAvail").textContent =
+      s.insta_available ? "" : "(needs: pip install instaloader)";
+    ["s_oakey","s_ankey","s_gkkey"].forEach(function(i){document.getElementById(i).value="";});
     setProvider(s.ai_provider || "openai");
+    var gk=document.getElementById("gkBadge");
+    gk.textContent = s.has_grok_key ? "set" : "not set";
+    gk.className = "keybadge" + (s.has_grok_key ? "" : " off");
     const oa = document.getElementById("oaBadge"), an = document.getElementById("anBadge");
     oa.textContent = s.has_openai_key ? "set ✓" : "not set";
     oa.className = "keybadge" + (s.has_openai_key ? "" : " off");
@@ -875,16 +1118,23 @@ async function saveSettings() {
     ai_provider: provider,
     openai_model: document.getElementById("s_oamodel").value.trim(),
     anthropic_model: document.getElementById("s_anmodel").value.trim(),
+    grok_model: document.getElementById("s_gkmodel").value.trim(),
+    lang: document.getElementById("s_lang").value,
+    agency: document.getElementById("s_agency").value.trim(),
+    insta_check: document.getElementById("s_insta").checked,
   };
   const oaKey = document.getElementById("s_oakey").value.trim();
   const anKey = document.getElementById("s_ankey").value.trim();
+  var gkKey = document.getElementById("s_gkkey").value.trim();
   if (oaKey) body.openai_api_key = oaKey;
   if (anKey) body.anthropic_api_key = anKey;
+  if (gkKey) body.grok_api_key = gkKey;
   try {
     const r = await (await fetch("/api/settings", {
       method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body)
     })).json();
     hasAI = r.ai_ready;
+    LANG = body.lang || "en";
     closeSettings();
     show("ok", "Settings saved." + (hasAI ? " AI rewrite is on (" + provider + ")." : " AI rewrite stays off until you add a key for the selected provider."));
     if (selId) { renderDetail(); getMessage(false); }
